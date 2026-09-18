@@ -1,0 +1,227 @@
+MUNDER DIFFLIN MULTI-AGENT SYSTEM
+WORKFLOW DIAGRAM
+================
+
+CUSTOMER
+|
+| Request + products + quantities + request date + required date
+v
+ORCHESTRATOR AGENT
+
+* Receives customer request
+* Coordinates workflow
+* Delegates to specialized agents
+* No direct database/business tools
+  |
+  | Products + quantities + dates
+  v
+  INVENTORY AGENT
+  |
+  |-- inventory_snapshot
+  |     -> get_all_inventory()
+  |
+  |-- check_item_stock
+  |     -> normalize_item_name()
+  |     -> get_stock_level()
+  |
+  |-- check_supplier_timeline
+  |     -> get_supplier_delivery_date()
+  |
+  | Database Access: READ
+  |
+  | Output: Inventory Feasibility JSON
+  |   - normalized products
+  |   - stock availability
+  |   - supplier timing
+  v
+
+COMPLETE ORDER FEASIBLE BY REQUIRED DATE?
+|
+|-- NO
+|     |
+|     -> ORCHESTRATOR AGENT
+|          |
+|          -> CUSTOMER
+|             Clear customer-safe rejection reason
+|
+|-- YES
+|
+v
+QUOTE AGENT
+|
+|-- build_customer_quote
+|     -> search_quote_history()
+|     -> custom catalog pricing
+|     -> markup calculation
+|     -> tiered bulk discount
+|
+| Database Access: READ
+|
+| Output: Quote JSON
+|   - quote amount
+|   - discount
+|   - historical context
+v
+ORDER AGENT
+|
+|-- check_company_health
+|     -> get_cash_balance()
+|     -> generate_financial_report()
+|
+|-- fulfill_order
+|     -> create_transaction()
+|     -> get_supplier_delivery_date()
+|     -> get_cash_balance()
+|
+| Database Access: READ / WRITE
+|
+| Only agent responsible for creating
+| business transactions.
+|
+| Output: Fulfillment JSON
+|   - fulfilled true/false
+|   - delivery information
+|   - customer-safe reason
+v
+ORCHESTRATOR AGENT
+|
+| Builds final customer-safe response
+| from validated agent/tool results
+v
+CUSTOMER
+|
+-> Final quote, fulfillment status,
+delivery information, or rejection reason
+
+================================
+DATA LAYER
+==========
+
+SQLite Database
+
+Tables:
+
+* inventory
+* transactions
+* quote_requests
+* quotes
+
+Database Interaction:
+
+Inventory Agent
+-> READ inventory/transaction information
+through starter helper functions
+
+Quote Agent
+-> READ historical quote information
+through search_quote_history()
+
+Order Agent
+-> READ financial/inventory information
+-> WRITE business transactions
+through create_transaction()
+
+Orchestrator Agent
+-> NO direct database access
+
+================================
+AGENT / TOOL / HELPER MAPPING
+=============================
+
+1. ORCHESTRATOR AGENT
+
+Purpose:
+
+* Coordinate the customer request workflow
+* Delegate work to specialized agents
+* Produce the final customer-facing response
+
+Direct Business/Database Tools:
+
+* None
+
+2. INVENTORY AGENT
+
+Purpose:
+
+* Normalize customer product names
+* Check inventory
+* Determine supplier replenishment timing
+* Determine order feasibility
+
+Tool: inventory_snapshot
+-> get_all_inventory()
+
+Tool: check_item_stock
+-> normalize_item_name()
+-> get_stock_level()
+
+Tool: check_supplier_timeline
+-> get_supplier_delivery_date()
+
+3. QUOTE AGENT
+
+Purpose:
+
+* Generate pricing for feasible requests
+* Consider historical quotes
+* Apply quantity-based discounts
+
+Tool: build_customer_quote
+-> search_quote_history()
+-> custom catalog pricing
+-> markup calculation
+-> tiered bulk discount
+
+4. ORDER AGENT
+
+Purpose:
+
+* Perform final business validation
+* Check financial health
+* Purchase additional stock when required and feasible
+* Record successful customer sales
+
+Tool: check_company_health
+-> get_cash_balance()
+-> generate_financial_report()
+
+Tool: fulfill_order
+-> create_transaction()
+-> get_supplier_delivery_date()
+-> get_cash_balance()
+
+Database Access:
+
+* READ / WRITE
+
+The Order Agent is the only agent responsible for
+creating business transactions.
+
+================================
+KEY DESIGN DECISIONS
+====================
+
+1. The Orchestrator coordinates the workflow but does not
+   directly modify business data.
+
+2. Inventory feasibility is checked before quote generation.
+
+3. Quote generation occurs only after product, quantity,
+   inventory, and delivery feasibility have been evaluated.
+
+4. Order processing occurs after inventory and quote validation
+   because this stage can create business transactions.
+
+5. If the complete requested order cannot be fulfilled, the
+   workflow stops and returns a clear customer-safe reason.
+
+6. Requested quantities and required dates remain authoritative
+   throughout the workflow.
+
+7. Customer-facing responses do not expose internal cash
+   balances, margins, database errors, or other internal
+   business information.
+
+8. Successful fulfillment is grounded in transaction processing,
+   not only a generated natural-language response.

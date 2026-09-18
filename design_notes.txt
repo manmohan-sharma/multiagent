@@ -1,0 +1,266 @@
+MUNDER DIFFLIN MULTI-AGENT SYSTEM
+DESIGN NOTES
+
+1. SYSTEM OVERVIEW
+
+This project implements a multi-agent system for Munder Difflin, a fictional paper supply company. The system processes customer quote requests and determines whether requested products can be supplied within the required timeframe, generates competitive quotes, evaluates whether an order can be fulfilled, records successful transactions, and returns a clear customer-facing response.
+
+The implementation uses the smolagents framework with a four-agent architecture:
+
+1. Orchestrator Agent
+2. Inventory Agent
+3. Quote Agent
+4. Order Agent
+
+The design separates inventory analysis, pricing, and order execution into specialized agents while using the Orchestrator Agent to coordinate the overall workflow.
+
+The submitted workflow diagram illustrates the agent architecture, data flow, decision points, and interactions between agents and tools.
+
+2. AGENT ARCHITECTURE AND RESPONSIBILITIES
+
+Orchestrator Agent
+
+The Orchestrator Agent acts as the main entry point for customer requests. It interprets the request, identifies products, quantities, request dates, and required delivery dates, and delegates work to the appropriate specialized agents.
+
+The Orchestrator does not directly perform database or business transactions. Its responsibility is coordination and generation of the final customer-safe response.
+
+This separation keeps orchestration logic independent from inventory, pricing, and transaction logic.
+
+Inventory Agent
+
+The Inventory Agent determines whether the requested products can be supplied.
+
+Its responsibilities include:
+
+* Normalizing customer product descriptions to catalog item names.
+* Checking available inventory.
+* Determining whether additional stock can be obtained from suppliers.
+* Evaluating supplier delivery timing against the customer's required date.
+* Returning inventory feasibility information to the orchestration workflow.
+
+The Inventory Agent uses:
+
+inventory_snapshot
+
+* Helper: get_all_inventory()
+
+check_item_stock
+
+* Helper: get_stock_level()
+* Custom product normalization logic is used to map customer terminology to catalog items.
+
+check_supplier_timeline
+
+* Helper: get_supplier_delivery_date()
+
+Inventory validation occurs before quoting so the system avoids generating a quote for an order that cannot reasonably be fulfilled.
+
+Quote Agent
+
+The Quote Agent creates pricing for feasible customer requests.
+
+Its responsibilities include:
+
+* Reviewing historical quote information when available.
+* Calculating prices using catalog pricing.
+* Applying volume-based discounts.
+* Returning structured quote information for further processing.
+
+The Quote Agent uses:
+
+build_customer_quote
+
+* Helper: search_quote_history()
+* Custom pricing and bulk-discount logic.
+
+The implemented pricing strategy uses a markup over catalog pricing followed by quantity-based discounts. Larger orders receive progressively larger discounts, allowing the system to balance customer attractiveness with business considerations.
+
+Order Agent
+
+The Order Agent performs final business validation and fulfillment.
+
+It is the only agent responsible for creating business transactions.
+
+Its responsibilities include:
+
+* Checking company financial health.
+* Validating that an order can be supported.
+* Purchasing additional stock when required and feasible.
+* Recording customer sales.
+* Returning the final fulfillment result to the orchestration workflow.
+
+The Order Agent uses:
+
+check_company_health
+
+* Helper: get_cash_balance()
+* Helper: generate_financial_report()
+
+fulfill_order
+
+* Helper: create_transaction()
+* Helper: get_supplier_delivery_date()
+* Helper: get_cash_balance()
+
+Keeping transaction creation within a single agent reduces the risk of multiple agents modifying business state independently.
+
+3. WORKFLOW AND DESIGN RATIONALE
+
+The overall workflow is:
+
+Customer Request
+→ Orchestrator Agent
+→ Inventory Agent
+→ Feasibility Decision
+→ Quote Agent
+→ Order Agent
+→ Orchestrator Agent
+→ Customer Response
+
+If the complete request is not feasible, the workflow stops and the Orchestrator returns a clear reason rather than silently fulfilling only part of the requested order.
+
+The workflow is intentionally sequential.
+
+Inventory validation happens first because product availability and delivery feasibility must be established before pricing an order.
+
+Quote generation happens after inventory validation because pricing an order that cannot be supplied would create an unrealistic customer commitment.
+
+Order processing happens last because it can modify business state by recording supplier purchases and customer sales.
+
+This sequence also limits unnecessary tool and database operations. For example, financial validation and transaction creation are not performed for requests that already fail inventory or delivery checks.
+
+The architecture uses four agents rather than creating an agent for every individual task. This provides specialization without introducing unnecessary coordination overhead.
+
+The workflow diagram submitted with the project provides a visual representation of these interactions and decision points.
+
+4. TOOL AND DATA INTERACTION
+
+The project uses the starter helper functions rather than duplicating their database functionality.
+
+The primary helper functions used are:
+
+* get_all_inventory()
+* get_stock_level()
+* get_supplier_delivery_date()
+* get_cash_balance()
+* generate_financial_report()
+* search_quote_history()
+* create_transaction()
+
+Read operations are primarily performed by the Inventory, Quote, and financial-health portions of the Order Agent.
+
+Business state changes are performed through create_transaction() within the Order Agent.
+
+The underlying SQLite data includes inventory, transactions, quote requests, and historical quote information.
+
+Agent-to-agent communication uses structured information so that inventory feasibility, quote information, and fulfillment results can be passed through the workflow while maintaining clear responsibility boundaries.
+
+5. PRODUCT NORMALIZATION AND BUSINESS RULES
+
+Customer terminology does not always exactly match the product catalog. To handle this, the implementation includes product normalization logic.
+
+For example, common customer descriptions can be mapped to catalog products such as:
+
+* A4 or printer paper
+* Glossy paper
+* Cardstock
+* Construction paper
+* Paper napkins
+* Paper cups
+* Paper plates
+* Poster paper
+* Decorative adhesive tape
+* Party streamers
+
+The system does not intentionally invent catalog products when a reliable mapping cannot be made.
+
+Unsupported products, insufficient inventory, or supplier timelines that do not satisfy the required delivery date can therefore result in the complete request being rejected.
+
+The quote logic also applies quantity-based discounts. This allows larger orders to receive more competitive pricing while retaining a consistent pricing strategy.
+
+6. SYSTEM EVALUATION
+
+The system was evaluated using the complete sample set of 20 customer quote requests.
+
+The final outputs are recorded in:
+
+test_results.csv
+
+The evaluation demonstrates both successful fulfillment and controlled rejection behavior.
+
+Six requests in the final test run resulted in clear successful fulfillment responses: requests 1, 6, 12, 14, 16, and 18.
+
+This represents:
+
+6 successful requests out of 20 total requests
+= 30% clear fulfillment rate.
+
+The remaining requests were rejected or not finalized when the complete customer request could not be safely fulfilled.
+
+Examples of rejection conditions included:
+
+* Requested products that could not be reliably mapped to the available catalog.
+* Insufficient available inventory.
+* Supplier replenishment that could not satisfy the requested delivery date.
+* Requests containing a mixture of supported and unsupported products.
+
+This rejection behavior is intentional. The system prioritizes fulfilling the complete requested order rather than silently changing quantities or promising unsupported products.
+
+The test results also demonstrate changes in company cash balance after multiple successful fulfillment operations. This provides evidence that successful orders are connected to actual transaction processing rather than being generated only as natural-language responses.
+
+Bulk discount behavior was also exercised during testing. Larger successful orders received larger discounts, including the high-volume request processed in test 14.
+
+Product normalization was important throughout the evaluation because customers frequently described products differently from the exact catalog terminology.
+
+7. OBSERVATIONS FROM TESTING
+
+Testing the complete workflow identified several important lessons.
+
+First, multi-agent systems need strong boundaries between reasoning and business transactions. Allowing only the Order Agent to create transactions made it easier to control when business state could change.
+
+Second, customer language can be ambiguous. Product normalization improved the system's ability to understand customer requests, but unsupported or highly specific product descriptions still required rejection when a reliable catalog match was unavailable.
+
+Third, generated customer responses must remain grounded in structured tool results. During development, additional validation was introduced to ensure that requested quantities and delivery dates remained authoritative and were not unintentionally changed while producing the final natural-language response.
+
+Finally, rejection is an important successful system behavior. A reliable order-processing agent should not approve every request. It should clearly reject requests when inventory, catalog, delivery, or business constraints prevent responsible fulfillment.
+
+8. LIMITATIONS AND FUTURE IMPROVEMENTS
+
+Improvement 1: More Advanced Product Matching
+
+The current implementation uses product normalization and aliases to map customer terminology to catalog items. A future version could use semantic similarity or controlled fuzzy matching to identify likely catalog products.
+
+The system should still require sufficient confidence before automatically selecting a product. Low-confidence matches could be returned for clarification rather than being automatically accepted or rejected.
+
+Improvement 2: Stronger Structured Response Grounding
+
+Although the agents exchange structured information, a future version could make the final customer response entirely dependent on a validated fulfillment object.
+
+For example, the final response could be generated only after validating:
+
+* requested quantity,
+* fulfilled quantity,
+* quoted amount,
+* discount,
+* delivery date,
+* transaction status.
+
+This would further reduce the possibility of the language model producing a final response that differs from the underlying tool results.
+
+Improvement 3: Proactive Inventory Management
+
+The current workflow responds to inventory requirements as customer requests arrive.
+
+A future version could analyze historical demand and automatically recommend reorder points for frequently requested paper products. This could reduce rejected orders and improve delivery performance without requiring excessive inventory.
+
+9. CONCLUSION
+
+The final solution demonstrates a practical multi-agent architecture in which specialized agents collaborate to process paper supply requests.
+
+The Orchestrator coordinates the process, the Inventory Agent determines feasibility, the Quote Agent produces pricing, and the Order Agent performs final validation and transaction processing.
+
+The architecture intentionally separates read-oriented analysis from state-changing operations and uses the provided starter helper functions for inventory, quote history, supplier timing, financial reporting, cash balance, and transaction processing.
+
+Evaluation across all 20 sample requests demonstrated both successful fulfillment and controlled rejection behavior. The final system fulfills feasible requests, applies volume-based pricing, preserves important customer requirements, records transactions for fulfilled orders, and provides understandable reasons when a request cannot be completed.
+
+Together, the implementation, workflow diagram, design notes, and test_results.csv document both how the system was designed and how it behaved during evaluation.
